@@ -1,5 +1,4 @@
 from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -72,6 +71,7 @@ class SiglipVisionEmbeddings(nn.Module):
 
 
 class SiglipMLP(nn.Module):
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -88,6 +88,7 @@ class SiglipMLP(nn.Module):
 
 
 class SiglipAttention(nn.Module):
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -112,7 +113,7 @@ class SiglipAttention(nn.Module):
         key_states = key_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1,2)
         value_states = value_states.view(batch_size, seq_len, self.num_heads,self.head_dim).transpose(1,2)
 
-        attn_weights = (torch.matmual(query_states, key_states.transpose(2,3)) *self.scale)
+        attn_weights = (torch.matmul(query_states, key_states.transpose(2,3)) *self.scale)
 
         if attn_weights.size() != (batch_size, self.num_heads, seq_len, seq_len):
             raise ValueError(
@@ -174,8 +175,8 @@ class SiglipEncoder(nn.Module):
             [SiglipEncoderLayer(config) for _ in range(config.num_hidden_layers)]
         )
 
-    def forward(self, input_embeds: torch.Tensor) -> torch.Tensor:
-        hidden_states = input_embeds
+    def forward(self, inputs_embeds: torch.Tensor) -> torch.Tensor:
+        hidden_states = inputs_embeds
 
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(hidden_states)

@@ -496,7 +496,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           image_features = self.multi_model_projector(selected_image_features)
 
           # Merge the embeddings of the text tokens and the image tokens
-          input_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(image_features, inputs_embeds, input_ids, attention_mask, kv_cache)
+          inputs_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(image_features, inputs_embeds, input_ids, attention_mask, kv_cache)
 
           outputs = self.language_model(
               attention_mask=attention_mask,
@@ -506,6 +506,3 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           )
 
           return outputs
-
-
-

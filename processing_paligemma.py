@@ -69,7 +69,7 @@ class PaliGemmaProcessor:
         EXTRA_TOKENS += [f"<seg{i:03}>" for i in range(128)]
         tokenizer.add_tokens(EXTRA_TOKENS)
 
-        self.image_token_id = tokenizer.convert_tokens_ids(self.IMAGE_TOKEN)
+        self.image_token_id = tokenizer.convert_tokens_to_ids(self.IMAGE_TOKEN)
 
         tokenizer.add_bos_token = False
         tokenizer.add_eos_token = False
@@ -110,6 +110,6 @@ class PaliGemmaProcessor:
             truncation = truncation,
         )
 
-        return_data = {"pixel_values": pixel_values, **input}
+        return_data = {"pixel_values": pixel_values, **inputs}
 
         return return_data

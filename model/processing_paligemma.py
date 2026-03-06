@@ -33,7 +33,7 @@ def normalize(image: np.ndarray,
 
 def process_images(
     images: List[Image.Image],
-    size: Dict[str, int] = None,
+    size: Tuple[str, int] = None,
     resample: Image.Resampling = None,
     rescale_factor: float = None,
     image_mean: Optional[Union[float, List[float]]] = None,

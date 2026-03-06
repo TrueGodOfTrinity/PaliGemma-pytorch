@@ -397,14 +397,14 @@ class GemmaForCausalLM(nn.Module):
         return return_data
 
 
-class PaliGemmaMultiModalProjector(nn.Module):
+class PaliGemmaMultiModelProjector(nn.Module):
 
     def __init__(self, config: PaliGemmaConfig):
         super().__init__()
-        self.Linear = nn.Linear(config.vision_config.hidden_size, config.projection_dim, bias=True)
+        self.linear = nn.Linear(config.vision_config.hidden_size, config.projection_dim, bias=True)
         # [Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, projection_dim]
     def forward(self, image_features):
-        hidden_states = self.Linear(image_features)
+        hidden_states = self.linear(image_features)
         return hidden_states
 
 
@@ -414,7 +414,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           super().__init__()
           self.config = config
           self.vision_tower = SiglipVisionModel(config.vision_config)
-          self.multi_model_projector = PaliGemmaMultiModalProjector(config)
+          self.multi_model_projector = PaliGemmaMultiModelProjector(config)
           self.vocab_size = config.vocab_size
 
           language_model = GemmaForCausalLM(config.text_config)

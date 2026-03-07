@@ -40,7 +40,7 @@ def process_images(
     image_std: Optional[Union[float, List[float]]] = None,
 )->List[np.ndarray]:
     height, width = size[0], size[1]
-    image = [resize(image=image, size=(height, width), resample=resample) for image in images]
+    images = [resize(image=image, size=(height, width), resample=resample) for image in images]
     # covert each image to a numpy array
     images = [np.array(image) for image in images]
     # rescale the pixel values to be in range [0, 1]

@@ -41,7 +41,6 @@ class GemmaConfig():
         self.pad_token_id = pad_token_id
 
 
-
 class PaliGemmaConfig():
 
     def __init__(self,
@@ -462,7 +461,9 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           q_len = inputs_embeds.shape[1]
 
           if kv_cache is None or kv_cache.num_items() == 0:
-              causal_mask = torch.full((batch_size, q_len, q_len), fill_value=0, dtype=dtype, device=device)
+              causal_mask = torch.full((batch_size, q_len, q_len), fill_value=min_dtype, dtype=dtype, device=device)
+              causal_mask = torch.triu(causal_mask, diagonal=1)
+        
           else:
               assert q_len == 1
               kv_len = kv_cache.num_items() + q_len
@@ -471,11 +472,10 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           causal_mask = causal_mask.unsqueeze(1)
 
           if kv_cache is not None and kv_cache.num_items() > 0:
-              position_ids = attention_mask.cumsum(-1)[:, -1]
-              if position_ids.dim() == 1:
-                  position_ids = position_ids.unsqueeze(0)
-              else:
-                  position_ids = (attention_mask.cumsum(-1)).masked_fill_((attention_mask == 0), 1).to(device)
+              position_ids = attention_mask.cumsum(-1)[:, -1].unsqueeze(0)
+            
+          else:
+            position_ids = (attention_mask.cumsum(-1) - 1).to(device)
 
           return final_embedding, causal_mask, position_ids
 
@@ -483,7 +483,8 @@ class PaliGemmaForConditionalGeneration(nn.Module):
                   input_ids: torch.LongTensor = None,
                   pixel_values: torch.FloatTensor = None,
                   attention_mask: Optional[torch.Tensor] = None,
-                  kv_cache: Optional[KVCache] = None
+                  kv_cache: Optional[KVCache] = None,
+                  labels: Optional[torch.LongTensor] = None
                   )->Tuple:
           assert torch.all(attention_mask == 1), "the input cannot be padded"
           # Extract the input embeddings, shape: (Batch_size, Seq_len, Hidden_size)
@@ -505,4 +506,20 @@ class PaliGemmaForConditionalGeneration(nn.Module):
               kv_cache=kv_cache,
           )
 
+          logits = outputs["logits"]
+
+          loss = None
+          if labels is not None:
+              # 移位：logit[i] 预测 label[i+1]
+              shift_logits = logits[..., :-1, :].contiguous()
+              shift_labels = labels[..., 1:].contiguous()
+
+              loss_fn = CrossEntropyLoss(ignore_index=-100)
+              shift_logits = shift_logits.view(-1, self.vocab_size)
+              shift_labels = shift_labels.view(-1)
+              shift_labels = shift_labels.to(shift_logits.device)
+
+              loss = loss_fn(shift_logits, shift_labels)
+            
+          outputs["loss"] = loss
           return outputs

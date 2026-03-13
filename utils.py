@@ -1,4 +1,4 @@
-from model.modeling_gemma import PaliGemmaForConditionalGeneration, PaliGemmaConfig
+from model import PaliGemmaForConditionalGeneration, PaliGemmaConfig
 from transformers import AutoTokenizer
 import json
 import glob

@@ -447,12 +447,13 @@ class PaliGemmaForConditionalGeneration(nn.Module):
 
           # expand the masks to the embedding dimension
           text_mask_expanded = text_mask.unsqueeze(-1).expand(-1, -1, embed_dim)
-          pad_mask_expanded = pad_mask.unsqueeze(-1).expand(-1, -1, embed_dim)
           image_mask_expanded = image_mask.unsqueeze(-1).expand(-1, -1, embed_dim)
           # add the text embeddings
           final_embedding = torch.where(text_mask_expanded, inputs_embeds, final_embedding)
           # insert image embeddings
           final_embedding = final_embedding.masked_scatter(image_mask_expanded, scaled_image_features)
+          # keep padding embeddings at zero so padded queries stay inert
+          final_embedding = final_embedding.masked_fill(pad_mask.unsqueeze(-1), 0)
 
           # create the attention mask
 
@@ -463,19 +464,25 @@ class PaliGemmaForConditionalGeneration(nn.Module):
           if kv_cache is None or kv_cache.num_items() == 0:
               causal_mask = torch.full((batch_size, q_len, q_len), fill_value=min_dtype, dtype=dtype, device=device)
               causal_mask = torch.triu(causal_mask, diagonal=1)
-        
           else:
               assert q_len == 1
               kv_len = kv_cache.num_items() + q_len
               causal_mask = torch.full((batch_size, q_len, kv_len), fill_value=0, dtype=dtype, device=device)
+
+          if kv_cache is None or kv_cache.num_items() == 0:
+              key_padding_mask = attention_mask[:, None, :].expand(-1, q_len, -1)
+          else:
+              key_padding_mask = attention_mask[:, None, :].expand(-1, q_len, -1)
+          causal_mask = causal_mask.masked_fill(key_padding_mask == 0, min_dtype)
           # [Batch_size, q_len, kv_len] -> [Batch_size, Num_head_q, kv_len]
           causal_mask = causal_mask.unsqueeze(1)
 
           if kv_cache is not None and kv_cache.num_items() > 0:
-              position_ids = attention_mask.cumsum(-1)[:, -1].unsqueeze(0)
-            
+              position_ids = attention_mask.cumsum(-1)[:, -1:] - 1
           else:
-            position_ids = (attention_mask.cumsum(-1) - 1).to(device)
+              position_ids = attention_mask.cumsum(-1) - 1
+
+          position_ids = position_ids.clamp_min(0).to(device)
 
           return final_embedding, causal_mask, position_ids
 
@@ -486,7 +493,6 @@ class PaliGemmaForConditionalGeneration(nn.Module):
                   kv_cache: Optional[KVCache] = None,
                   labels: Optional[torch.LongTensor] = None
                   )->Tuple:
-          assert torch.all(attention_mask == 1), "the input cannot be padded"
           # Extract the input embeddings, shape: (Batch_size, Seq_len, Hidden_size)
           inputs_embeds = self.language_model.get_input_embeddings()(input_ids)
 

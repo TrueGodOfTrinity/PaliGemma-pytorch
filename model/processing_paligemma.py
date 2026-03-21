@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Tuple, Iterable
+from typing import List, Optional, Union, Tuple, Iterable
 import numpy as np
 from PIL import Image
 import torch
@@ -55,11 +55,12 @@ class PaliGemmaProcessor:
 
     IMAGE_TOKEN = "<image>"
 
-    def __init__(self, tokenizer, num_image_tokens: int, image_size: int):
+    def __init__(self, tokenizer, num_image_tokens: int, image_size: int, ignore_index: int = -100):
         super().__init__()
 
         self.image_seq_length = num_image_tokens
         self.image_size = image_size
+        self.ignore_index = ignore_index
 
         tokens_to_add = {"additional_special_tokens": [self.IMAGE_TOKEN]}
         tokenizer.add_special_tokens(tokens_to_add)
@@ -76,8 +77,41 @@ class PaliGemmaProcessor:
 
         self.tokenizer = tokenizer
 
-    def __call__(self, text: List[str], images: List[Image.Image], padding: str = "longest", truncation: bool = True) -> dict:
-        assert len(images) == 1 and len(text) == 1, f"Receive {len(images)} images for {len(text)} prompts."
+    def _build_prompt_strings(self, text: List[str]) -> List[str]:
+        return [
+            add_image_tokens_to_prompt(
+                prefix_prompt=prompt,
+                bos_token=self.tokenizer.bos_token,
+                image_seq_len=self.image_seq_length,
+                image_token=self.IMAGE_TOKEN,
+            )
+            for prompt in text
+        ]
+
+    def _append_suffix(self, prompt: str, suffix: str) -> str:
+        suffix = "" if suffix is None else suffix
+        eos_token = self.tokenizer.eos_token or ""
+        if eos_token and suffix.endswith(eos_token):
+            return prompt + suffix
+        return prompt + suffix + eos_token
+
+    def __call__(
+        self,
+        text: List[str],
+        images: List[Image.Image],
+        suffix: Optional[List[str]] = None,
+        padding: str = "longest",
+        truncation: bool = True,
+        max_length: Optional[int] = None,
+        return_labels: bool = False,
+    ) -> dict:
+        assert len(images) == len(text), f"Receive {len(images)} images for {len(text)} prompts."
+        if suffix is not None:
+            assert len(suffix) == len(text), f"Receive {len(suffix)} suffixes for {len(text)} prompts."
+        if max_length is not None and max_length <= self.image_seq_length:
+            raise ValueError(
+                f"`max_length` must be greater than the image token count ({self.image_seq_length})."
+            )
 
         pixel_values = process_images(
             images,
@@ -92,24 +126,43 @@ class PaliGemmaProcessor:
         # convert the numpy array to a pytorch tensor
         pixel_values = torch.tensor(pixel_values)
 
-
-        input_strings = [
-            add_image_tokens_to_prompt(
-                prefix_prompt = prompt,
-                bos_token = self.tokenizer.bos_token,
-                image_seq_len = self.image_seq_length,
-                image_token = self.IMAGE_TOKEN,
-            )
-            for prompt in text
-        ]
+        input_strings = self._build_prompt_strings(text)
+        model_strings = input_strings
+        if suffix is not None:
+            model_strings = [
+                self._append_suffix(prompt, target)
+                for prompt, target in zip(input_strings, suffix)
+            ]
         # return the input_ids and attention_mask as Pytorch tensors
         inputs = self.tokenizer(
-            input_strings,
+            model_strings,
             return_tensors = "pt",
             padding = padding,
             truncation = truncation,
+            max_length = max_length,
         )
+        image_token_counts = (inputs["input_ids"] == self.image_token_id).sum(dim=-1)
+        if not torch.all(image_token_counts == self.image_seq_length):
+            raise ValueError(
+                "Image token count does not match the expected patch count. "
+                "Check tokenizer special tokens or increase `max_length`."
+            )
 
         return_data = {"pixel_values": pixel_values, **inputs}
+
+        if return_labels:
+            prompt_inputs = self.tokenizer(
+                input_strings,
+                padding = False,
+                truncation = truncation,
+                max_length = max_length,
+            )
+            labels = inputs["input_ids"].clone()
+            labels[inputs["attention_mask"] == 0] = self.ignore_index
+            for index, prompt_input_ids in enumerate(prompt_inputs["input_ids"]):
+                prompt_length = min(len(prompt_input_ids), labels.shape[1])
+                labels[index, :prompt_length] = self.ignore_index
+
+            return_data["labels"] = labels
 
         return return_data
